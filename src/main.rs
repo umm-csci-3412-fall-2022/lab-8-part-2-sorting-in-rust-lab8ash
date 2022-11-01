@@ -82,7 +82,7 @@ fn insertion_sort<T: PartialOrd + std::fmt::Debug>(v: &mut [T]) {
 //
 // Note that the parameter v *has* to be mutable because we're 
 // modifying it in place.
-fn quicksort<T: PartialOrd + std::fmt::Debug>(v: &mut [T]) {
+fn quicksort<T: PartialOrd + Copy + std::fmt::Debug>(v: &mut [T]) {
     // Quicksort is a recursive solution where we select a pivot
     // value (usually just the first element) and split (in place)
     // the array into two sections: The "front" is all < the pivot,
@@ -97,26 +97,35 @@ fn quicksort<T: PartialOrd + std::fmt::Debug>(v: &mut [T]) {
     // are smaller than the original array; without it you can
     // end up with infinite recursion.)
 
-    let length = v.len();
-    // If the array has 0 or 1 elements it's already sorted
-    // and we'll just stop.
-    if length < 2 {
+    if v.len() < 2 {
         return;
     }
 
-    // Now choose a pivot and do the organizing.
-    
-    // ...
-
-    let smaller = 0; // Totally wrong – you should fix this.
+    let smaller = partition(v);
 
     // Sort all the items < pivot
     quicksort(&mut v[0..smaller]);
     // Sort all the items ≥ pivot, *not* including the
     // pivot value itself. If we don't include the +1
     // here you can end up in infinite recursions.
-    quicksort(&mut v[smaller+1..length]);
+    quicksort(&mut v[smaller+1..]);
 }
+
+fn partition<T: PartialOrd + Copy + std::fmt::Debug>(v: &mut [T]) -> usize {
+    let pivot_value = *v.last().unwrap();
+
+    let mut i = 0;
+    for j in 0..v.len() {
+        if v[j] < pivot_value {
+            v.swap(i, j);
+            i += 1;
+        }
+    }
+
+    v.swap(i, v.len() - 1);
+    i
+}
+
 
 // Merge sort can't be done "in place", so it needs to return a _new_
 // Vec<T> of the sorted elements. The array elements need to have
@@ -143,25 +152,16 @@ fn merge_sort<T: PartialOrd + std::marker::Copy + std::fmt::Debug>(v: &[T]) -> V
     // and then merge the results together. All the "interesting"
     // work is in the merge here, where in quicksort the "interesting"
     // work is in organizing around the pivot.
-
-    let len = v.len();
-    if len == 0 {
-        return Vec::<T>::new();
+    match v.len() {
+        0 | 1 => v.to_vec(),
+        _ => {
+            let middle = v.len() / 2;
+            let left = merge_sort(&v[0..middle]);
+            let right = merge_sort(&v[middle..]);
+            merge(left, right)
+        }
     }
-    if len == 1 {
-        let mut result = Vec::<T>::new();
-        result.push(v[0]);
-        return result;
-    }
-    let middle = v.len() / 2; //rounds down by default
-    let left = merge_sort(&v[0..middle]);
-    let right = merge_sort(&v[middle .. len]);
-    // Note that in Rust the last expression is what is
-    // returned, and we don't need the explicit `return`
-    // keyword. So this merges `left` and `right` and
-    // returns the result as the result of this call to
-    // `merge_sort()`.
-    merge(left, right)
+    
 }
 
 // "Out of the box" there's a warning here about `ys` being
@@ -169,22 +169,106 @@ fn merge_sort<T: PartialOrd + std::marker::Copy + std::fmt::Debug>(v: &[T]) -> V
 // so that warning should go away. You can remove this comment
 // if you wish since it won't be relevant any longer.
 fn merge<T: PartialOrd + std::marker::Copy + std::fmt::Debug>(xs: Vec<T>, ys: Vec<T>) -> Vec<T> {
-    // This takes two sorted vectors, like:
-    //    <5, 8, 9> and
-    //    <0, 2, 3, 6>
-    // and merges them into a single sorted vector like:
-    //    <0, 2, 3, 5, 6, 8, 9>
-    // You should be able to do this in linear time by having
-    // two indices that point to where you are in xs and ys.
-    // You then compare those values, push the smaller one onto
-    // the result vector, and increment the appropriate index.
-    // You stop when one of your indices hits the end of its
-    // vector, and then push all the remaining elements from the
-    // other vector onto the result.
+    let mut x_iter = xs.into_iter().peekable();
+    let mut y_iter = ys.into_iter().peekable();
 
-    // This is totally wrong and will not sort. You should replace it
-    // with something useful. :)
-    xs
+    let mut result = Vec::new();
+
+    loop {
+        match (x_iter.peek(), y_iter.peek()) {
+            (None, None) => break,
+            (Some(a), None) => { result.push(*a); x_iter.next(); },
+            (None, Some(b)) => { result.push(*b); y_iter.next(); },
+            (Some(a), Some(b)) => {
+                if a < b {
+                    result.push(*a);
+                    x_iter.next();
+                }
+                else {
+                    result.push(*b);
+                    y_iter.next();
+                }
+            }
+        }
+    }
+
+    result
+}
+
+
+
+// Merge sort can't be done "in place", so it needs to return a _new_
+// Vec<T> of the sorted elements. The array elements need to have
+// the traits `PartialOrd` and `Debug` like in the other sorting
+// algorithms, but they also need to have the `Copy` trait so we
+// can do things like `result.push(v[i])` to push element v[i] onto
+// a vector result. This ends up copying v[i] (to prevent ownership
+// issues on the array values), so we have to implement the `Copy`
+// trait. Numbers all do this, so that should be fine.
+// Note, however, that this has significant consequences – we can use `merge_sort`
+// to sort things like numbers, but sorting "large" things (e.g., student records)
+// would involve copying them, and that's likely to be expensive and perhaps undesirable.
+//
+// Note that here the parameter v does *not* have to be mutable because we're 
+// creating and returning a new vector instead of modifying v in place.
+// We're returning a vector instead of an array here because arrays have to
+// know exactly how big they are. I suspect there's a way to make that work
+// but I (Nic) couldn't figure out an easy way to sort out the types on the
+// `merge()` function keeping everything as arrays. It was a lot easier to 
+// just have the return type be Vec, so that's what I did. 
+fn merge_sort_other<T: PartialOrd + std::marker::Copy + std::fmt::Debug + std::default::Default>(v: &[T]) -> Vec<T> {
+    // Merge sort is a recursive solution where we split the
+    // array in half (slices make this easy), sort each half,
+    // and then merge the results together. All the "interesting"
+    // work is in the merge here, where in quicksort the "interesting"
+    // work is in organizing around the pivot.
+    let mut scratch = vec![T::default(); v.len()];
+    let mut result = vec![T::default(); v.len()];
+    merge_sort_other_inner(v, scratch.as_mut_slice(), result.as_mut_slice());
+
+    result
+}
+
+fn merge_sort_other_inner<T: PartialOrd + std::marker::Copy + std::fmt::Debug + std::default::Default>(v: &[T], scratch: &mut[T], output: &mut[T]) {
+    match v.len() {
+        0 => {},
+        1 => {
+            output[0] = v[0];
+        }
+        _ => {
+            let middle = v.len() / 2;
+            merge_sort_other_inner(&v[0..middle], &mut output[0..middle], &mut scratch[0..middle]);
+            merge_sort_other_inner(&v[middle..], &mut output[middle..], &mut scratch[middle..]);
+            merge_other(&scratch[0..middle], &scratch[middle..], output);
+        }
+    }
+}
+
+// "Out of the box" there's a warning here about `ys` being
+// unused. Presumably you'll actually use `ys` in your solution,
+// so that warning should go away. You can remove this comment
+// if you wish since it won't be relevant any longer.
+fn merge_other<T: PartialOrd + std::marker::Copy + std::fmt::Debug + std::default::Default>(xs: &[T], ys: &[T], result: &mut[T]) {
+    let mut x_iter = xs.into_iter().peekable();
+    let mut y_iter = ys.into_iter().peekable();
+
+    for output_loc in result.iter_mut() {
+        match (x_iter.peek(), y_iter.peek()) {
+            (None, None) => unreachable!(),
+            (Some(a), None) => { *output_loc = dbg!(**a); x_iter.next(); },
+            (None, Some(b)) => { *output_loc = dbg!(**b); y_iter.next(); },
+            (Some(a), Some(b)) => {
+                if a < b {
+                    *output_loc = dbg!(**a);
+                    x_iter.next();
+                }
+                else {
+                    *output_loc = dbg!(**b);
+                    y_iter.next();
+                }
+            }
+        }
+    }
 }
 
 fn is_sorted<T: PartialOrd>(slice: &[T]) -> bool {
@@ -295,6 +379,36 @@ mod tests {
         fn presorted() {
             let input = [0, 0, 2, 2, 3, 3, 5, 6, 8, 9];
             let result = merge_sort(&input);
+            let expected = [0, 0, 2, 2, 3, 3, 5, 6, 8, 9].to_vec();
+
+            assert_eq!(expected, result);
+        }
+    }
+
+    mod merge_sort_other {
+        use super::*;
+        #[test]
+        fn empty() {
+            let input : [i32; 0] = [];
+            let result = merge_sort_other(&input);
+            let expected : Vec<i32> = Vec::new();
+
+            assert_eq!(expected, result);
+        }
+
+        #[test]
+        fn ten_items() {
+            let input = [3, 2, 0, 5, 8, 9, 6, 3, 2, 0];
+            let result = merge_sort_other(&input);
+            let expected = [0, 0, 2, 2, 3, 3, 5, 6, 8, 9].to_vec();
+
+            assert_eq!(expected, result);
+        }
+
+        #[test]
+        fn presorted() {
+            let input = [0, 0, 2, 2, 3, 3, 5, 6, 8, 9];
+            let result = merge_sort_other(&input);
             let expected = [0, 0, 2, 2, 3, 3, 5, 6, 8, 9].to_vec();
 
             assert_eq!(expected, result);
